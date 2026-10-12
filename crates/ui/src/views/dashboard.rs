@@ -1,7 +1,7 @@
 use std::sync::Arc;
 
 use cooly_api::{ApiError, Client, Team};
-use cooly_store::Store;
+use cooly_store::{ProjectsLayout, Store};
 use gpui_kit::{
     App, AppContext as _, Context, Entity, EventEmitter, FocusHandle, IntoElement, KeyBinding, ParentElement as _,
     Render, SharedString, Styled as _, Subscription, Task, Window, actions,
@@ -25,7 +25,16 @@ actions!(
     [
         /// Reloads the team's projects.
         #[derive(Eq)]
-        Refresh
+        Refresh,
+        /// Forgets the saved credentials and returns to the login window.
+        #[derive(Eq)]
+        SignOut,
+        /// Shows the projects as a grid of cards.
+        #[derive(Eq)]
+        ShowGrid,
+        /// Shows the projects as a list of rows.
+        #[derive(Eq)]
+        ShowList,
     ]
 );
 
@@ -33,7 +42,11 @@ const KEY_CONTEXT: &str = "Dashboard";
 
 /// Binds the dashboard's shortcuts. `secondary` is cmd on macOS and ctrl elsewhere.
 pub fn bind_keys(cx: &mut App) {
-    cx.bind_keys([KeyBinding::new("secondary-r", Refresh, Some(KEY_CONTEXT))]);
+    cx.bind_keys([
+        KeyBinding::new("secondary-r", Refresh, Some(KEY_CONTEXT)),
+        KeyBinding::new("secondary-1", ShowGrid, Some(KEY_CONTEXT)),
+        KeyBinding::new("secondary-2", ShowList, Some(KEY_CONTEXT)),
+    ]);
 }
 
 pub enum DashboardEvent {
@@ -171,6 +184,15 @@ impl Render for DashboardView {
             .on_action(cx.listener(|this, _: &Refresh, _, cx| {
                 this.projects.update(cx, ProjectsView::refresh);
             }))
+            .on_action(cx.listener(|_, _: &SignOut, _, cx| cx.emit(DashboardEvent::SignedOut)))
+            .on_action(cx.listener(|this, _: &ShowGrid, _, cx| {
+                this.projects
+                    .update(cx, |projects, cx| projects.set_layout(ProjectsLayout::Grid, cx));
+            }))
+            .on_action(cx.listener(|this, _: &ShowList, _, cx| {
+                this.projects
+                    .update(cx, |projects, cx| projects.set_layout(ProjectsLayout::List, cx));
+            }))
             .size_full()
             .bg(theme.background)
             .text_color(theme.foreground)
@@ -181,40 +203,131 @@ impl Render for DashboardView {
 
 #[cfg(test)]
 mod tests {
-    use std::sync::atomic::Ordering;
+    use std::{
+        cell::Cell,
+        rc::Rc,
+        sync::{
+            Arc,
+            atomic::{AtomicUsize, Ordering},
+        },
+    };
 
-    use gpui_kit::{TestAppContext, WindowOptions, test::TestWindowExt as _};
+    use gpui_kit::{AnyWindowHandle, OwnedMenuItem, TestAppContext, WindowOptions, test::TestWindowExt as _};
+    use tempfile::TempDir;
 
     use super::*;
-    use crate::test_support::{serve, store};
+    use crate::{
+        menus,
+        test_support::{serve, store},
+    };
 
-    #[gpui_kit::test]
-    fn refresh_shortcut_reloads_projects(cx: &mut TestAppContext) {
-        let (_dir, store) = store();
+    struct Opened {
+        _dir: TempDir,
+        store: Arc<Store>,
+        requests: Arc<AtomicUsize>,
+        window: AnyWindowHandle,
+        dashboard: Entity<DashboardView>,
+    }
+
+    fn open(cx: &TestAppContext) -> Opened {
+        let (dir, store) = store();
         let (client, requests) = serve("200 OK", "[]");
         let team = Team {
             id: 0,
             name: "Team".into(),
         };
-        let (window, _) = cx.update(|cx| {
+        let (window, dashboard) = cx.update(|cx| {
             gpui_kit::init(cx);
             bind_keys(cx);
+            menus::set_menus(ProjectsLayout::Grid, cx);
+            let store = store.clone();
             gpui_kit::open_window(WindowOptions::default(), cx, |window, cx| {
                 cx.new(|cx| DashboardView::new(store, client, Some(team), window, cx))
             })
             .unwrap()
         });
-
         cx.run_until_parked();
-        assert_eq!(requests.load(Ordering::SeqCst), 1);
+        Opened {
+            _dir: dir,
+            store,
+            requests,
+            window,
+            dashboard,
+        }
+    }
 
+    fn press(cx: &mut TestAppContext, window: AnyWindowHandle, keys: &str) {
         cx.update_window(window, |_, window, cx| {
             window.render_frame(cx);
-            window.press("secondary-r", cx);
+            window.press(keys, cx);
         })
         .unwrap();
-
         cx.run_until_parked();
-        assert_eq!(requests.load(Ordering::SeqCst), 2);
+    }
+
+    /// The names of the checked items in the View menu.
+    fn checked_views(cx: &TestAppContext) -> Vec<String> {
+        let menus = cx.update(|cx| cx.get_menus()).unwrap_or_default();
+        menus
+            .iter()
+            .filter(|menu| menu.name == "View")
+            .flat_map(|menu| &menu.items)
+            .filter_map(|item| match item {
+                OwnedMenuItem::Action {
+                    name, checked: true, ..
+                } => Some(name.to_string()),
+                _ => None,
+            })
+            .collect()
+    }
+
+    #[gpui_kit::test]
+    fn refresh_shortcut_reloads_projects(cx: &mut TestAppContext) {
+        let opened = open(cx);
+        assert_eq!(opened.requests.load(Ordering::SeqCst), 1);
+
+        press(cx, opened.window, "secondary-r");
+        assert_eq!(opened.requests.load(Ordering::SeqCst), 2);
+    }
+
+    #[gpui_kit::test]
+    fn layout_shortcuts_switch_view_and_menu_check(cx: &mut TestAppContext) {
+        let opened = open(cx);
+        assert_eq!(checked_views(cx), ["as Grid"]);
+
+        press(cx, opened.window, "secondary-2");
+        assert_eq!(
+            opened.store.preferences().unwrap().projects_layout,
+            ProjectsLayout::List
+        );
+        assert_eq!(checked_views(cx), ["as List"]);
+
+        press(cx, opened.window, "secondary-1");
+        assert_eq!(
+            opened.store.preferences().unwrap().projects_layout,
+            ProjectsLayout::Grid
+        );
+        assert_eq!(checked_views(cx), ["as Grid"]);
+    }
+
+    #[gpui_kit::test]
+    fn sign_out_action_signs_out(cx: &mut TestAppContext) {
+        let opened = open(cx);
+        let signed_out = Rc::new(Cell::new(false));
+        let seen = signed_out.clone();
+        cx.update(|cx| {
+            cx.subscribe(&opened.dashboard, move |_, event, _| {
+                if matches!(event, DashboardEvent::SignedOut) {
+                    seen.set(true);
+                }
+            })
+            .detach();
+        });
+
+        cx.update_window(opened.window, |_, window, cx| {
+            window.dispatch_action(Box::new(SignOut), cx)
+        })
+        .unwrap();
+        assert!(signed_out.get());
     }
 }

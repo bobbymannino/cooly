@@ -1,15 +1,8 @@
 use std::sync::Arc;
 
 use cooly_store::Store;
-use gpui_kit::{KeyBinding, actions};
-
-actions!(
-    cooly,
-    [
-        #[derive(Eq)]
-        Quit
-    ]
-);
+use cooly_ui::Quit;
+use gpui_kit::KeyBinding;
 
 fn main() {
     gpui_kit::application().with_assets(cooly_ui::Assets).run(|cx| {

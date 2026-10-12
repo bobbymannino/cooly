@@ -10,7 +10,10 @@ use gpui_kit::{
     px, size,
 };
 
-use crate::views::{self, DashboardEvent, DashboardView, LoginEvent, LoginView, SessionExpired};
+use crate::{
+    menus,
+    views::{self, DashboardEvent, DashboardView, LoginEvent, LoginView, SessionExpired},
+};
 
 const LOGIN_SIZE: Size<gpui_kit::Pixels> = size(px(380.0), px(460.0));
 const MAIN_SIZE: Size<gpui_kit::Pixels> = size(px(960.0), px(640.0));
@@ -30,6 +33,7 @@ pub fn launch(store: Arc<Store>, cx: &mut App) -> gpui_kit::Result<()> {
     });
     apply_appearance(preferences.appearance, cx);
     views::bind_keys(cx);
+    menus::set_menus(preferences.projects_layout, cx);
 
     let saved = store.credentials().unwrap_or_else(|error| {
         eprintln!("ignoring saved credentials: {error}");

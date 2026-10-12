@@ -18,7 +18,7 @@ use gpui_kit::{
     px,
 };
 
-use crate::api_task::spawn_api_call;
+use crate::{api_task::spawn_api_call, menus};
 
 pub enum ProjectsEvent {
     /// The instance rejected the token while loading projects.
@@ -82,11 +82,13 @@ impl ProjectsView {
         cx.notify();
     }
 
-    fn set_layout(&mut self, layout: ProjectsLayout, cx: &mut Context<Self>) {
+    /// Switches layout, saving it and updating the checked item in the View menu.
+    pub fn set_layout(&mut self, layout: ProjectsLayout, cx: &mut Context<Self>) {
         if self.layout == layout {
             return;
         }
         self.layout = layout;
+        menus::set_menus(layout, cx);
         cx.notify();
 
         // Read-modify-write so other preferences are kept.
