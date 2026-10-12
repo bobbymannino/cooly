@@ -21,7 +21,7 @@ use cooly_api::Credentials;
 use directories::ProjectDirs;
 pub use error::StoreError;
 pub use key::{KEY_LEN, KeySource, Keychain};
-pub use preferences::{Appearance, Preferences};
+pub use preferences::{Appearance, Preferences, ProjectsLayout};
 use serde::{Deserialize, Serialize};
 use zeroize::Zeroizing;
 
@@ -173,6 +173,7 @@ mod tests {
 
         let preferences = Preferences {
             appearance: Appearance::Dark,
+            projects_layout: ProjectsLayout::List,
         };
         store.save_preferences(&preferences).unwrap();
         assert_eq!(store.preferences().unwrap(), preferences);

@@ -89,8 +89,9 @@ fn open_main_window(store: Arc<Store>, client: Client, team: Option<Team>, cx: &
         window_min_size: Some(MAIN_MIN_SIZE),
         ..Default::default()
     };
-    let (handle, dashboard) =
-        gpui_kit::open_window(options, cx, |_, cx| cx.new(|cx| DashboardView::new(client, team, cx)))?;
+    let (handle, dashboard) = gpui_kit::open_window(options, cx, |_, cx| {
+        cx.new(|cx| DashboardView::new(store.clone(), client, team, cx))
+    })?;
 
     cx.subscribe(&dashboard, move |_, event, cx| match event {
         DashboardEvent::SignedOut => {

@@ -6,6 +6,7 @@ use serde::{Deserialize, Serialize};
 #[serde(default)]
 pub struct Preferences {
     pub appearance: Appearance,
+    pub projects_layout: ProjectsLayout,
 }
 
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
@@ -16,4 +17,13 @@ pub enum Appearance {
     System,
     Light,
     Dark,
+}
+
+/// How the dashboard lays out projects.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum ProjectsLayout {
+    #[default]
+    Grid,
+    List,
 }

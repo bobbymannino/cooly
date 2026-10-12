@@ -1,13 +1,13 @@
 use std::{fmt, time::Duration};
 
-use serde::{Deserialize, de::DeserializeOwned};
+use serde::de::DeserializeOwned;
 use ureq::{
     Agent,
     http::StatusCode,
     tls::{RootCerts, TlsConfig},
 };
 
-use crate::Credentials;
+use crate::{Credentials, Project, Team};
 
 const TIMEOUT: Duration = Duration::from_secs(15);
 
@@ -49,6 +49,15 @@ impl Client {
         self.get("teams/current")
     }
 
+    /// Lists the projects of the token's team: `GET /api/v1/projects`.
+    ///
+    /// # Errors
+    ///
+    /// See [`ApiError`].
+    pub fn projects(&self) -> Result<Vec<Project>, ApiError> {
+        self.get("projects")
+    }
+
     fn get<T: DeserializeOwned>(&self, path: &str) -> Result<T, ApiError> {
         let url = format!("{}api/v1/{path}", self.credentials.instance());
         let mut response = self
@@ -67,13 +76,6 @@ impl Client {
             status => Err(ApiError::UnexpectedStatus(status.as_u16())),
         }
     }
-}
-
-/// The team an API token is bound to.
-#[derive(Debug, Clone, PartialEq, Eq, Deserialize)]
-pub struct Team {
-    pub id: u64,
-    pub name: String,
 }
 
 /// Why a request to the Coolify API failed.
@@ -179,6 +181,42 @@ mod tests {
                 .to_ascii_lowercase()
                 .contains("authorization: bearer 1|secret\r\n")
         );
+    }
+
+    #[test]
+    fn projects_parses_list() {
+        let (client, server) = serve(
+            "200 OK",
+            r#"[
+                {"id":1,"uuid":"abc","description":"Main site","name":"Website"},
+                {"id":2,"uuid":"def","description":null,"name":"Internal"},
+                {"uuid":"ghi","name":"Bare"}
+            ]"#,
+        );
+
+        let projects = client.projects().unwrap();
+
+        assert_eq!(
+            projects,
+            [
+                Project {
+                    uuid: "abc".to_owned(),
+                    name: "Website".to_owned(),
+                    description: Some("Main site".to_owned()),
+                },
+                Project {
+                    uuid: "def".to_owned(),
+                    name: "Internal".to_owned(),
+                    description: None,
+                },
+                Project {
+                    uuid: "ghi".to_owned(),
+                    name: "Bare".to_owned(),
+                    description: None,
+                },
+            ]
+        );
+        assert!(server.join().unwrap().starts_with("GET /api/v1/projects HTTP/1.1\r\n"));
     }
 
     #[test]

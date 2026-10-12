@@ -16,6 +16,8 @@ use gpui_kit::{
     prelude::FluentBuilder as _,
 };
 
+use crate::api_task::spawn_api_call;
+
 /// Emitted once the instance has accepted the API token.
 pub enum LoginEvent {
     SignedIn { client: Client, team: Team },
@@ -105,27 +107,25 @@ impl LoginView {
     /// Checks the token against the instance on a background thread, saving the credentials if it's accepted.
     fn verify(&mut self, client: Client, cx: &Context<Self>) {
         let store = self.store.clone();
-        let check = cx.background_executor().spawn(async move {
-            let team = client.current_team()?;
-            // Not being remembered shouldn't stop this sign-in.
-            if let Err(error) = store.save_credentials(client.credentials()) {
-                eprintln!("failed to save credentials: {error}");
-            }
-            Ok::<_, cooly_api::ApiError>((client, team))
-        });
-        self.verifying = Some(cx.spawn(async move |this, cx| {
-            let result = check.await;
-            // Fails only if the view was closed meanwhile, in which case there's nothing left to update.
-            this.update(cx, |this, cx| {
+        self.verifying = Some(spawn_api_call(
+            cx,
+            move || {
+                let team = client.current_team()?;
+                // Not being remembered shouldn't stop this sign-in.
+                if let Err(error) = store.save_credentials(client.credentials()) {
+                    eprintln!("failed to save credentials: {error}");
+                }
+                Ok((client, team))
+            },
+            |this, result, cx| {
                 this.verifying = None;
                 match result {
                     Ok((client, team)) => cx.emit(LoginEvent::SignedIn { client, team }),
                     Err(error) => this.error = Some(error.to_string().into()),
                 }
                 cx.notify();
-            })
-            .ok();
-        }));
+            },
+        ));
     }
 }
 
