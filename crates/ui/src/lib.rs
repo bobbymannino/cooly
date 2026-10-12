@@ -3,6 +3,8 @@
 mod api_task;
 mod assets;
 pub mod views;
+#[cfg(test)]
+mod test_support;
 mod windows;
 
 pub use assets::Assets;

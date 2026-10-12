@@ -57,7 +57,8 @@ impl ProjectsView {
         this
     }
 
-    fn refresh(&mut self, cx: &mut Context<Self>) {
+    /// Fetches the projects again, cancelling any fetch already in flight.
+    pub fn refresh(&mut self, cx: &mut Context<Self>) {
         let client = self.client.clone();
         self.error = None;
         self.loading = Some(spawn_api_call(
@@ -312,52 +313,12 @@ fn description(project: &Project, muted: Hsla) -> gpui_kit::Div {
 
 #[cfg(test)]
 mod tests {
-    use std::{
-        cell::Cell,
-        io::{Read as _, Write as _},
-        net::TcpListener,
-        rc::Rc,
-        thread,
-    };
+    use std::{cell::Cell, rc::Rc};
 
-    use cooly_api::Credentials;
-    use cooly_store::Keychain;
     use gpui_kit::{AnyWindowHandle, AppContext as _, Entity, TestAppContext, WindowOptions, test::TestWindowExt as _};
-    use tempfile::TempDir;
 
     use super::*;
-
-    /// A client for a local server that answers one request with `status` and `body`.
-    fn serve(status: &'static str, body: &'static str) -> Client {
-        let listener = TcpListener::bind("127.0.0.1:0").unwrap();
-        let address = listener.local_addr().unwrap();
-        thread::spawn(move || {
-            let (mut stream, _) = listener.accept().unwrap();
-            let mut request = Vec::new();
-            let mut buffer = [0; 1024];
-            while !request.windows(4).any(|window| window == b"\r\n\r\n") {
-                let read = stream.read(&mut buffer).unwrap();
-                if read == 0 {
-                    break;
-                }
-                request.extend_from_slice(&buffer[..read]);
-            }
-            let response = format!(
-                "HTTP/1.1 {status}\r\nContent-Type: application/json\r\nContent-Length: {}\r\nConnection: \
-                 close\r\n\r\n{body}",
-                body.len()
-            );
-            stream.write_all(response.as_bytes()).unwrap();
-        });
-        Client::new(Credentials::parse(&format!("http://{address}"), "1|token").unwrap())
-    }
-
-    /// The keychain is never touched: only preferences are read and written, and those aren't encrypted.
-    fn store() -> (TempDir, Arc<Store>) {
-        let dir = TempDir::new().unwrap();
-        let store = Arc::new(Store::new(dir.path(), Keychain));
-        (dir, store)
-    }
+    use crate::test_support::{serve, store};
 
     fn open(cx: &TestAppContext, client: Client, store: Arc<Store>) -> (AnyWindowHandle, Entity<ProjectsView>) {
         cx.update(|cx| {
@@ -372,7 +333,7 @@ mod tests {
     #[gpui_kit::test]
     fn loads_sorted_projects_and_saves_layout(cx: &mut TestAppContext) {
         let (_dir, store) = store();
-        let client = serve(
+        let (client, _) = serve(
             "200 OK",
             r#"[{"uuid":"b","name":"beta","description":null},{"uuid":"a","name":"Alpha","description":"Site"}]"#,
         );
@@ -404,7 +365,7 @@ mod tests {
     #[gpui_kit::test]
     fn rejected_token_expires_session(cx: &TestAppContext) {
         let (_dir, store) = store();
-        let client = serve("401 Unauthorized", r#"{"message":"Unauthenticated."}"#);
+        let (client, _) = serve("401 Unauthorized", r#"{"message":"Unauthenticated."}"#);
         let (_, view) = open(cx, client, store);
 
         let expired = Rc::new(Cell::new(false));

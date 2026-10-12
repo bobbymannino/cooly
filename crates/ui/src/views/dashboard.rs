@@ -3,8 +3,8 @@ use std::sync::Arc;
 use cooly_api::{ApiError, Client, Team};
 use cooly_store::Store;
 use gpui_kit::{
-    AppContext as _, Context, Entity, EventEmitter, IntoElement, ParentElement as _, Render, SharedString, Styled as _,
-    Subscription, Task, Window,
+    App, AppContext as _, Context, Entity, EventEmitter, FocusHandle, IntoElement, KeyBinding, ParentElement as _,
+    Render, SharedString, Styled as _, Subscription, Task, Window, actions,
     assets::IconName,
     component::{
         ActiveTheme as _, StyledExt as _,
@@ -12,13 +12,29 @@ use gpui_kit::{
         h_flex, v_flex,
     },
     div,
-    prelude::FluentBuilder as _,
+    prelude::{FluentBuilder as _, InteractiveElement as _},
 };
 
 use crate::{
     api_task::spawn_api_call,
     views::{ProjectsEvent, ProjectsView},
 };
+
+actions!(
+    dashboard,
+    [
+        /// Reloads the team's projects.
+        #[derive(Eq)]
+        Refresh
+    ]
+);
+
+const KEY_CONTEXT: &str = "Dashboard";
+
+/// Binds the dashboard's shortcuts. `secondary` is cmd on macOS and ctrl elsewhere.
+pub fn bind_keys(cx: &mut App) {
+    cx.bind_keys([KeyBinding::new("secondary-r", Refresh, Some(KEY_CONTEXT))]);
+}
 
 pub enum DashboardEvent {
     SignedOut,
@@ -34,6 +50,8 @@ pub struct DashboardView {
     /// The in-flight team fetch. Dropping it cancels the fetch.
     loading: Option<Task<()>>,
     projects: Entity<ProjectsView>,
+    /// Focused on open so the dashboard's shortcuts work without clicking into the window first.
+    focus_handle: FocusHandle,
     _subscription: Subscription,
 }
 
@@ -41,11 +59,20 @@ impl EventEmitter<DashboardEvent> for DashboardView {}
 
 impl DashboardView {
     /// Without a `team` (e.g. when restoring a saved session) it's fetched, which also re-checks the token.
-    pub fn new(store: Arc<Store>, client: Client, team: Option<Team>, cx: &mut Context<Self>) -> Self {
+    pub fn new(
+        store: Arc<Store>,
+        client: Client,
+        team: Option<Team>,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) -> Self {
         let projects = cx.new(|cx| ProjectsView::new(client.clone(), store, cx));
         let subscription = cx.subscribe(&projects, |_, _, event, cx| match event {
             ProjectsEvent::SessionExpired(reason) => cx.emit(DashboardEvent::SessionExpired(reason.clone())),
         });
+
+        let focus_handle = cx.focus_handle();
+        focus_handle.focus(window, cx);
 
         let mut this = Self {
             client,
@@ -53,6 +80,7 @@ impl DashboardView {
             error: None,
             loading: None,
             projects,
+            focus_handle,
             _subscription: subscription,
         };
         if this.team.is_none() {
@@ -138,10 +166,55 @@ impl Render for DashboardView {
     fn render(&mut self, _: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
         let theme = cx.theme();
         v_flex()
+            .track_focus(&self.focus_handle)
+            .key_context(KEY_CONTEXT)
+            .on_action(cx.listener(|this, _: &Refresh, _, cx| {
+                this.projects.update(cx, ProjectsView::refresh);
+            }))
             .size_full()
             .bg(theme.background)
             .text_color(theme.foreground)
             .child(self.render_header(cx))
             .child(div().flex_1().min_h_0().child(self.projects.clone()))
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use std::sync::atomic::Ordering;
+
+    use gpui_kit::{TestAppContext, WindowOptions, test::TestWindowExt as _};
+
+    use super::*;
+    use crate::test_support::{serve, store};
+
+    #[gpui_kit::test]
+    fn refresh_shortcut_reloads_projects(cx: &mut TestAppContext) {
+        let (_dir, store) = store();
+        let (client, requests) = serve("200 OK", "[]");
+        let team = Team {
+            id: 0,
+            name: "Team".into(),
+        };
+        let (window, _) = cx.update(|cx| {
+            gpui_kit::init(cx);
+            bind_keys(cx);
+            gpui_kit::open_window(WindowOptions::default(), cx, |window, cx| {
+                cx.new(|cx| DashboardView::new(store, client, Some(team), window, cx))
+            })
+            .unwrap()
+        });
+
+        cx.run_until_parked();
+        assert_eq!(requests.load(Ordering::SeqCst), 1);
+
+        cx.update_window(window, |_, window, cx| {
+            window.render_frame(cx);
+            window.press("secondary-r", cx);
+        })
+        .unwrap();
+
+        cx.run_until_parked();
+        assert_eq!(requests.load(Ordering::SeqCst), 2);
     }
 }

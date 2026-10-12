@@ -10,7 +10,7 @@ use gpui_kit::{
     px, size,
 };
 
-use crate::views::{DashboardEvent, DashboardView, LoginEvent, LoginView, SessionExpired};
+use crate::views::{self, DashboardEvent, DashboardView, LoginEvent, LoginView, SessionExpired};
 
 const LOGIN_SIZE: Size<gpui_kit::Pixels> = size(px(380.0), px(460.0));
 const MAIN_SIZE: Size<gpui_kit::Pixels> = size(px(960.0), px(640.0));
@@ -29,6 +29,7 @@ pub fn launch(store: Arc<Store>, cx: &mut App) -> gpui_kit::Result<()> {
         cooly_store::Preferences::default()
     });
     apply_appearance(preferences.appearance, cx);
+    views::bind_keys(cx);
 
     let saved = store.credentials().unwrap_or_else(|error| {
         eprintln!("ignoring saved credentials: {error}");
@@ -89,8 +90,8 @@ fn open_main_window(store: Arc<Store>, client: Client, team: Option<Team>, cx: &
         window_min_size: Some(MAIN_MIN_SIZE),
         ..Default::default()
     };
-    let (handle, dashboard) = gpui_kit::open_window(options, cx, |_, cx| {
-        cx.new(|cx| DashboardView::new(store.clone(), client, team, cx))
+    let (handle, dashboard) = gpui_kit::open_window(options, cx, |window, cx| {
+        cx.new(|cx| DashboardView::new(store.clone(), client, team, window, cx))
     })?;
 
     cx.subscribe(&dashboard, move |_, event, cx| match event {
