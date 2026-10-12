@@ -1,9 +1,17 @@
-[package]
-name = "cooly"
+[workspace]
+resolver = "3"
+members = ["crates/*"]
+default-members = ["crates/app"]
+
+[workspace.package]
 version = "0.1.0"
 edition = "2024"
 
-[dependencies]
+[workspace.dependencies]
+cooly-api = { path = "crates/api" }
+cooly-ui = { path = "crates/ui" }
+gpui-kit = "0.7.3"
+url = "2.5"
 
 [profile.release]
 opt-level = "s"
@@ -11,9 +19,6 @@ lto = "fat"
 codegen-units = 1
 panic = "abort"
 strip = true
-
-[lints]
-workspace = true
 
 [workspace.lints.clippy]
 pedantic = { level = "deny", priority = -1 }
