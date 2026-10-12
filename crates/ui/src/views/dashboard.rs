@@ -30,6 +30,8 @@ impl Render for DashboardView {
             .items_center()
             .justify_center()
             .gap_4()
+            .bg(cx.theme().background)
+            .text_color(cx.theme().foreground)
             .child(div().text_xl().font_semibold().child("Dashboard"))
             .child(
                 div()

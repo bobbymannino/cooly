@@ -1,6 +1,6 @@
-//! Views for the Cooly desktop app.
+//! Views and windows for the Cooly desktop app.
 
-mod app;
 pub mod views;
+mod windows;
 
-pub use app::CoolyApp;
+pub use windows::open_login_window;

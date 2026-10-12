@@ -11,7 +11,6 @@ use gpui_kit::{
     },
     div,
     prelude::FluentBuilder as _,
-    px,
 };
 
 /// Emitted once the user submits credentials that pass local validation.
@@ -76,51 +75,51 @@ impl Render for LoginView {
     fn render(&mut self, _: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
         let theme = cx.theme();
 
-        v_flex().size_full().items_center().justify_center().p_4().child(
-            v_flex()
-                .w(px(380.))
-                .gap_6()
-                .p_8()
-                .rounded(theme.radius_lg)
-                .border_1()
-                .border_color(theme.border)
-                .child(
-                    v_flex()
-                        .gap_1()
-                        .child(div().text_2xl().font_semibold().child("Sign in to Coolify"))
-                        .child(
-                            div()
-                                .text_sm()
-                                .text_color(theme.muted_foreground)
-                                .child("Create an API token under Keys & Tokens in your Coolify dashboard."),
+        // The titlebar is transparent, so the extra top padding keeps content clear of the traffic lights.
+        v_flex()
+            .size_full()
+            .gap_6()
+            .px_8()
+            .pt_10()
+            .pb_8()
+            .bg(theme.background)
+            .text_color(theme.foreground)
+            .child(
+                v_flex()
+                    .gap_1()
+                    .child(div().text_2xl().font_semibold().child("Sign in to Coolify"))
+                    .child(
+                        div()
+                            .text_sm()
+                            .text_color(theme.muted_foreground)
+                            .child("Create an API token under Keys & Tokens in your Coolify dashboard."),
+                    ),
+            )
+            .child(
+                Form::new()
+                    .child(
+                        Field::new()
+                            .label("Instance URL")
+                            .child(Input::new(&self.instance).id("instance").aria_label("Instance URL")),
+                    )
+                    .child(
+                        Field::new().label("API token").child(
+                            Input::new(&self.token)
+                                .id("token")
+                                .aria_label("API token")
+                                .mask_toggle(),
                         ),
-                )
-                .child(
-                    Form::new()
-                        .child(
-                            Field::new()
-                                .label("Instance URL")
-                                .child(Input::new(&self.instance).id("instance").aria_label("Instance URL")),
-                        )
-                        .child(
-                            Field::new().label("API token").child(
-                                Input::new(&self.token)
-                                    .id("token")
-                                    .aria_label("API token")
-                                    .mask_toggle(),
-                            ),
-                        ),
-                )
-                .when_some(self.error.clone(), |this, error| {
-                    this.child(div().text_sm().text_color(theme.danger).child(error))
-                })
-                .child(
-                    Button::new("sign-in")
-                        .primary()
-                        .w_full()
-                        .label("Sign in")
-                        .on_click(cx.listener(|this, _, _, cx| this.submit(cx))),
-                ),
-        )
+                    ),
+            )
+            .child(
+                Button::new("sign-in")
+                    .primary()
+                    .w_full()
+                    .label("Sign in")
+                    .on_click(cx.listener(|this, _, _, cx| this.submit(cx))),
+            )
+            .when_some(self.error.clone(), |this, error| {
+                this.child(div().text_sm().text_color(theme.danger).child(error))
+            })
     }
 }
