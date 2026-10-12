@@ -21,6 +21,12 @@ pub enum LoginEvent {
     SignedIn { client: Client, team: Team },
 }
 
+/// The instance stopped accepting a saved token, so the user has to sign in again.
+pub struct SessionExpired {
+    pub instance: String,
+    pub reason: SharedString,
+}
+
 /// Asks for the Coolify instance URL and an API token, and remembers them once the instance accepts the token.
 pub struct LoginView {
     store: Arc<Store>,
@@ -35,41 +41,38 @@ pub struct LoginView {
 impl EventEmitter<LoginEvent> for LoginView {}
 
 impl LoginView {
-    /// With `saved` credentials the form is prefilled and signs in straight away.
-    pub fn new(store: Arc<Store>, saved: Option<Credentials>, window: &mut Window, cx: &mut Context<Self>) -> Self {
-        let (saved_instance, saved_token) = saved
-            .as_ref()
-            .map(|saved| (saved.instance().as_str(), saved.token()))
-            .unwrap_or_default();
+    /// After an `expired` session the instance URL is kept and the reason shown, so only a new token is needed.
+    pub fn new(
+        store: Arc<Store>,
+        expired: Option<SessionExpired>,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) -> Self {
+        let (instance_url, error) = expired.map_or((String::new(), None), |expired| {
+            (expired.instance, Some(expired.reason))
+        });
+        let has_instance = !instance_url.is_empty();
         let instance = cx.new(|cx| {
             InputState::new(window, cx)
                 .placeholder("https://coolify.example.com")
-                .default_value(saved_instance.to_owned())
+                .default_value(instance_url)
         });
-        let token = cx.new(|cx| {
-            InputState::new(window, cx)
-                .placeholder("API token")
-                .masked(true)
-                .default_value(saved_token.to_owned())
-        });
+        let token = cx.new(|cx| InputState::new(window, cx).placeholder("API token").masked(true));
         let subscriptions = [
             cx.subscribe_in(&instance, window, Self::on_input_event),
             cx.subscribe_in(&token, window, Self::on_input_event),
         ];
-        instance.update(cx, |input, cx| input.focus(window, cx));
+        let first_empty = if has_instance { &token } else { &instance };
+        first_empty.update(cx, |input, cx| input.focus(window, cx));
 
-        let mut this = Self {
+        Self {
             store,
             instance,
             token,
-            error: None,
+            error,
             verifying: None,
             _subscriptions: subscriptions,
-        };
-        if let Some(saved) = saved {
-            this.verify(Client::new(saved), cx);
         }
-        this
     }
 
     fn on_input_event(&mut self, _: &Entity<InputState>, event: &InputEvent, _: &mut Window, cx: &mut Context<Self>) {

@@ -2,7 +2,7 @@
 
 use std::sync::Arc;
 
-use cooly_api::{Client, Credentials, Team};
+use cooly_api::{Client, Team};
 use cooly_store::{Appearance, Store};
 use gpui_kit::{
     AnyWindowHandle, App, AppContext as _, Bounds, Size, TitlebarOptions, WindowBounds, WindowOptions,
@@ -10,13 +10,13 @@ use gpui_kit::{
     px, size,
 };
 
-use crate::views::{DashboardEvent, DashboardView, LoginEvent, LoginView};
+use crate::views::{DashboardEvent, DashboardView, LoginEvent, LoginView, SessionExpired};
 
 const LOGIN_SIZE: Size<gpui_kit::Pixels> = size(px(380.0), px(460.0));
 const MAIN_SIZE: Size<gpui_kit::Pixels> = size(px(960.0), px(640.0));
 const MAIN_MIN_SIZE: Size<gpui_kit::Pixels> = size(px(480.0), px(480.0));
 
-/// Applies saved preferences and opens the login window, which signs in automatically with saved credentials.
+/// Applies saved preferences, then opens the main window if credentials were saved, or the login window if not.
 ///
 /// Unreadable preferences or credentials are logged and ignored rather than blocking startup.
 ///
@@ -34,7 +34,10 @@ pub fn launch(store: Arc<Store>, cx: &mut App) -> gpui_kit::Result<()> {
         eprintln!("ignoring saved credentials: {error}");
         None
     });
-    open_login_window(store, saved, cx)
+    match saved {
+        Some(credentials) => open_main_window(store, Client::new(credentials), None, cx),
+        None => open_login_window(store, None, cx),
+    }
 }
 
 fn apply_appearance(appearance: Appearance, cx: &mut App) {
@@ -46,7 +49,7 @@ fn apply_appearance(appearance: Appearance, cx: &mut App) {
 }
 
 /// Opens the fixed-size, chromeless login window. Signing in replaces it with the main window.
-fn open_login_window(store: Arc<Store>, saved: Option<Credentials>, cx: &mut App) -> gpui_kit::Result<()> {
+fn open_login_window(store: Arc<Store>, expired: Option<SessionExpired>, cx: &mut App) -> gpui_kit::Result<()> {
     let options = WindowOptions {
         titlebar: Some(TitlebarOptions {
             title: Some("Cooly".into()),
@@ -59,13 +62,13 @@ fn open_login_window(store: Arc<Store>, saved: Option<Credentials>, cx: &mut App
         ..Default::default()
     };
     let (handle, login) = gpui_kit::open_window(options, cx, |window, cx| {
-        cx.new(|cx| LoginView::new(store.clone(), saved, window, cx))
+        cx.new(|cx| LoginView::new(store.clone(), expired, window, cx))
     })?;
 
     cx.subscribe(&login, move |_, event, cx| match event {
         LoginEvent::SignedIn { client, team } => {
             replace_window(handle, cx, |cx| {
-                open_main_window(store.clone(), client.clone(), team.clone(), cx)
+                open_main_window(store.clone(), client.clone(), Some(team.clone()), cx)
             });
         }
     })
@@ -73,7 +76,10 @@ fn open_login_window(store: Arc<Store>, saved: Option<Credentials>, cx: &mut App
     Ok(())
 }
 
-fn open_main_window(store: Arc<Store>, client: Client, team: Team, cx: &mut App) -> gpui_kit::Result<()> {
+/// Opens the main window. Without a `team` the dashboard re-checks the token and falls back to the login window if the
+/// instance rejects it.
+fn open_main_window(store: Arc<Store>, client: Client, team: Option<Team>, cx: &mut App) -> gpui_kit::Result<()> {
+    let instance = client.credentials().instance().to_string();
     let options = WindowOptions {
         titlebar: Some(TitlebarOptions {
             title: Some("Cooly".into()),
@@ -83,7 +89,8 @@ fn open_main_window(store: Arc<Store>, client: Client, team: Team, cx: &mut App)
         window_min_size: Some(MAIN_MIN_SIZE),
         ..Default::default()
     };
-    let (handle, dashboard) = gpui_kit::open_window(options, cx, |_, cx| cx.new(|_| DashboardView::new(client, team)))?;
+    let (handle, dashboard) =
+        gpui_kit::open_window(options, cx, |_, cx| cx.new(|cx| DashboardView::new(client, team, cx)))?;
 
     cx.subscribe(&dashboard, move |_, event, cx| match event {
         DashboardEvent::SignedOut => {
@@ -91,6 +98,16 @@ fn open_main_window(store: Arc<Store>, client: Client, team: Team, cx: &mut App)
                 eprintln!("failed to forget credentials: {error}");
             }
             replace_window(handle, cx, |cx| open_login_window(store.clone(), None, cx));
+        }
+        DashboardEvent::SessionExpired(reason) => {
+            if let Err(error) = store.clear_credentials() {
+                eprintln!("failed to forget credentials: {error}");
+            }
+            let expired = SessionExpired {
+                instance: instance.clone(),
+                reason: reason.clone(),
+            };
+            replace_window(handle, cx, |cx| open_login_window(store.clone(), Some(expired), cx));
         }
     })
     .detach();
