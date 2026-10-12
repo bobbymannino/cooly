@@ -5,7 +5,8 @@ use std::sync::Arc;
 use cooly_api::{Client, Team};
 use cooly_store::{Appearance, Store};
 use gpui_kit::{
-    AnyWindowHandle, App, AppContext as _, Bounds, Size, TitlebarOptions, WindowBounds, WindowOptions,
+    AnyWindowHandle, App, AppContext as _, Bounds, KeyBinding, Size, TitlebarOptions, WindowBounds, WindowOptions,
+    actions,
     component::{Theme, ThemeMode},
     px, size,
 };
@@ -14,6 +15,15 @@ use crate::{
     menus,
     views::{self, DashboardEvent, DashboardView, LoginEvent, LoginView, SessionExpired},
 };
+
+actions!(
+    cooly,
+    [
+        /// Closes the focused window.
+        #[derive(Eq)]
+        CloseWindow
+    ]
+);
 
 const LOGIN_SIZE: Size<gpui_kit::Pixels> = size(px(380.0), px(460.0));
 const MAIN_SIZE: Size<gpui_kit::Pixels> = size(px(960.0), px(640.0));
@@ -32,6 +42,7 @@ pub fn launch(store: Arc<Store>, cx: &mut App) -> gpui_kit::Result<()> {
         cooly_store::Preferences::default()
     });
     apply_appearance(preferences.appearance, cx);
+    bind_close_window(cx);
     views::bind_keys(cx);
     menus::set_menus(preferences.projects_layout, cx);
 
@@ -43,6 +54,22 @@ pub fn launch(store: Arc<Store>, cx: &mut App) -> gpui_kit::Result<()> {
         Some(credentials) => open_main_window(store, Client::new(credentials), None, cx),
         None => open_login_window(store, None, cx),
     }
+}
+
+/// Lets `secondary-w` close whichever window is focused, whatever it shows.
+fn bind_close_window(cx: &mut App) {
+    cx.on_action(|_: &CloseWindow, cx| {
+        let Some(window) = cx.active_window() else {
+            return;
+        };
+        // The action is dispatched from inside the window, which can't be updated until the dispatch finishes.
+        cx.defer(move |cx| {
+            if let Err(error) = window.update(cx, |_, window, _| window.remove_window()) {
+                eprintln!("failed to close window: {error:?}");
+            }
+        });
+    });
+    cx.bind_keys([KeyBinding::new("secondary-w", CloseWindow, None)]);
 }
 
 fn apply_appearance(appearance: Appearance, cx: &mut App) {
@@ -128,5 +155,41 @@ fn replace_window(old: AnyWindowHandle, cx: &mut App, open: impl FnOnce(&mut App
     }
     if let Err(error) = old.update(cx, |_, window, _| window.remove_window()) {
         eprintln!("failed to close window: {error:?}");
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use gpui_kit::{TestAppContext, test::TestWindowExt as _};
+
+    use super::*;
+    use crate::test_support::{serve, store};
+
+    #[gpui_kit::test]
+    fn close_window_shortcut_closes_focused_window(cx: &mut TestAppContext) {
+        let (_dir, store) = store();
+        let (client, _) = serve("200 OK", "[]");
+        cx.update(|cx| {
+            gpui_kit::init(cx);
+            bind_close_window(cx);
+            views::bind_keys(cx);
+            open_login_window(store.clone(), None, cx).unwrap();
+            open_main_window(store, client, None, cx).unwrap();
+        });
+        cx.run_until_parked();
+        let windows = cx.update(|cx| cx.windows());
+        assert_eq!(windows.len(), 2);
+
+        // Both windows close, so the shortcut works on the login window as well as the dashboard.
+        for window in windows {
+            cx.update_window(window, |_, window, cx| {
+                window.activate_window();
+                window.render_frame(cx);
+                window.press("secondary-w", cx);
+            })
+            .unwrap();
+            cx.run_until_parked();
+            assert!(!cx.update(|cx| cx.windows()).contains(&window));
+        }
     }
 }

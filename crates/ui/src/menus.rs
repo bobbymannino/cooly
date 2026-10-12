@@ -6,7 +6,10 @@
 use cooly_store::ProjectsLayout;
 use gpui_kit::{App, Menu, MenuItem, actions};
 
-use crate::views::{Refresh, ShowGrid, ShowList, SignOut, ToggleFullScreen};
+use crate::{
+    views::{Refresh, ShowGrid, ShowList, SignOut, ToggleFullScreen},
+    windows::CloseWindow,
+};
 
 actions!(
     cooly,
@@ -35,5 +38,6 @@ pub fn set_menus(layout: ProjectsLayout, cx: &App) {
             MenuItem::separator(),
             MenuItem::action("Toggle Full Screen", ToggleFullScreen),
         ]),
+        Menu::new("Window").items([MenuItem::action("Close Window", CloseWindow)]),
     ]);
 }
