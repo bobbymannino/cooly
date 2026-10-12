@@ -1,5 +1,7 @@
 # Cooly
 
+![Screenshot](screenshot.png)
+
 > [!NOTE]
 > This project is not at all affiliated with Coolify.
 
