@@ -1,0 +1,11 @@
+[package]
+name = "cooly-api"
+description = "Coolify API types and client"
+version.workspace = true
+edition.workspace = true
+
+[dependencies]
+url.workspace = true
+
+[lints]
+workspace = true

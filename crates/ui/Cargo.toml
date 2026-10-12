@@ -1,0 +1,12 @@
+[package]
+name = "cooly-ui"
+description = "Views and components for Cooly"
+version.workspace = true
+edition.workspace = true
+
+[dependencies]
+cooly-api.workspace = true
+gpui-kit.workspace = true
+
+[lints]
+workspace = true
