@@ -35,9 +35,11 @@ pub fn set_menus(layout: ProjectsLayout, cx: &App) {
             MenuItem::separator(),
             MenuItem::action("as Grid", ShowGrid).checked(layout == ProjectsLayout::Grid),
             MenuItem::action("as List", ShowList).checked(layout == ProjectsLayout::List),
-            MenuItem::separator(),
-            MenuItem::action("Toggle Full Screen", ToggleFullScreen),
         ]),
-        Menu::new("Window").items([MenuItem::action("Close Window", CloseWindow)]),
+        Menu::new("Window").items([
+            MenuItem::action("Toggle Full Screen", ToggleFullScreen),
+            MenuItem::separator(),
+            MenuItem::action("Close Window", CloseWindow),
+        ]),
     ]);
 }
