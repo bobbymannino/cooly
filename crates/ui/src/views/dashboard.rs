@@ -35,10 +35,16 @@ actions!(
         /// Shows the projects as a list of rows.
         #[derive(Eq)]
         ShowList,
+        /// Enters or leaves full screen.
+        #[derive(Eq)]
+        ToggleFullScreen,
     ]
 );
 
 const KEY_CONTEXT: &str = "Dashboard";
+
+/// Each platform's usual full screen shortcut.
+const FULL_SCREEN_KEYS: &str = if cfg!(target_os = "macos") { "cmd-ctrl-f" } else { "f11" };
 
 /// Binds the dashboard's shortcuts. `secondary` is cmd on macOS and ctrl elsewhere.
 pub fn bind_keys(cx: &mut App) {
@@ -46,6 +52,7 @@ pub fn bind_keys(cx: &mut App) {
         KeyBinding::new("secondary-r", Refresh, Some(KEY_CONTEXT)),
         KeyBinding::new("secondary-1", ShowGrid, Some(KEY_CONTEXT)),
         KeyBinding::new("secondary-2", ShowList, Some(KEY_CONTEXT)),
+        KeyBinding::new(FULL_SCREEN_KEYS, ToggleFullScreen, Some(KEY_CONTEXT)),
     ]);
 }
 
@@ -193,6 +200,7 @@ impl Render for DashboardView {
                 this.projects
                     .update(cx, |projects, cx| projects.set_layout(ProjectsLayout::List, cx));
             }))
+            .on_action(|_: &ToggleFullScreen, window, _| window.toggle_fullscreen())
             .size_full()
             .bg(theme.background)
             .text_color(theme.foreground)
@@ -308,6 +316,22 @@ mod tests {
             ProjectsLayout::Grid
         );
         assert_eq!(checked_views(cx), ["as Grid"]);
+    }
+
+    #[gpui_kit::test]
+    fn full_screen_shortcut_toggles_full_screen(cx: &mut TestAppContext) {
+        let opened = open(cx);
+        let is_full_screen = |cx: &mut TestAppContext| {
+            cx.update_window(opened.window, |_, window, _| window.is_fullscreen())
+                .unwrap()
+        };
+        assert!(!is_full_screen(cx));
+
+        press(cx, opened.window, FULL_SCREEN_KEYS);
+        assert!(is_full_screen(cx));
+
+        press(cx, opened.window, FULL_SCREEN_KEYS);
+        assert!(!is_full_screen(cx));
     }
 
     #[gpui_kit::test]
