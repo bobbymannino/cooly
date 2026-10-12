@@ -22,7 +22,7 @@ impl Credentials {
         if instance.is_empty() {
             return Err(CredentialsError::MissingInstance);
         }
-        let instance = if instance.contains("://") {
+        let mut instance = if instance.contains("://") {
             Url::parse(instance)
         } else {
             Url::parse(&format!("https://{instance}"))
@@ -30,6 +30,13 @@ impl Credentials {
         .map_err(|_| CredentialsError::InvalidInstance)?;
         if !matches!(instance.scheme(), "http" | "https") || instance.host().is_none() {
             return Err(CredentialsError::InvalidInstance);
+        }
+        // A trailing slash lets API paths be appended to instances hosted under a sub-path.
+        instance.set_query(None);
+        instance.set_fragment(None);
+        if !instance.path().ends_with('/') {
+            let path = format!("{}/", instance.path());
+            instance.set_path(&path);
         }
 
         let token = token.trim();
@@ -100,6 +107,12 @@ mod tests {
         let credentials = Credentials::parse("  http://10.0.0.2:8000  ", " abc ").unwrap();
         assert_eq!(credentials.instance().as_str(), "http://10.0.0.2:8000/");
         assert_eq!(credentials.token(), "abc");
+    }
+
+    #[test]
+    fn normalizes_sub_path_with_trailing_slash() {
+        let credentials = Credentials::parse("https://example.com/coolify?x=1#top", "abc").unwrap();
+        assert_eq!(credentials.instance().as_str(), "https://example.com/coolify/");
     }
 
     #[test]

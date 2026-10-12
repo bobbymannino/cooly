@@ -1,6 +1,6 @@
 //! Opening and swapping the app's windows.
 
-use cooly_api::Credentials;
+use cooly_api::{Client, Team};
 use gpui_kit::{
     AnyWindowHandle, App, AppContext as _, Bounds, Size, TitlebarOptions, WindowBounds, WindowOptions, px, size,
 };
@@ -31,15 +31,15 @@ pub fn open_login_window(cx: &mut App) -> gpui_kit::Result<()> {
     let (handle, login) = gpui_kit::open_window(options, cx, |window, cx| cx.new(|cx| LoginView::new(window, cx)))?;
 
     cx.subscribe(&login, move |_, event, cx| match event {
-        LoginEvent::Submitted(credentials) => {
-            replace_window(handle, cx, |cx| open_main_window(credentials.clone(), cx));
+        LoginEvent::SignedIn { client, team } => {
+            replace_window(handle, cx, |cx| open_main_window(client.clone(), team.clone(), cx));
         }
     })
     .detach();
     Ok(())
 }
 
-fn open_main_window(credentials: Credentials, cx: &mut App) -> gpui_kit::Result<()> {
+fn open_main_window(client: Client, team: Team, cx: &mut App) -> gpui_kit::Result<()> {
     let options = WindowOptions {
         titlebar: Some(TitlebarOptions {
             title: Some("Cooly".into()),
@@ -49,7 +49,7 @@ fn open_main_window(credentials: Credentials, cx: &mut App) -> gpui_kit::Result<
         window_min_size: Some(MAIN_MIN_SIZE),
         ..Default::default()
     };
-    let (handle, dashboard) = gpui_kit::open_window(options, cx, |_, cx| cx.new(|_| DashboardView::new(credentials)))?;
+    let (handle, dashboard) = gpui_kit::open_window(options, cx, |_, cx| cx.new(|_| DashboardView::new(client, team)))?;
 
     cx.subscribe(&dashboard, move |_, event, cx| match event {
         DashboardEvent::SignedOut => replace_window(handle, cx, open_login_window),

@@ -11,6 +11,8 @@ edition = "2024"
 cooly-api = { path = "crates/api" }
 cooly-ui = { path = "crates/ui" }
 gpui-kit = "0.7.3"
+serde = { version = "1.0", features = ["derive"] }
+ureq = { version = "3.4", features = ["json", "platform-verifier"] }
 url = "2.5"
 
 [profile.release]

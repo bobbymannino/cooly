@@ -5,6 +5,8 @@ version.workspace = true
 edition.workspace = true
 
 [dependencies]
+serde.workspace = true
+ureq.workspace = true
 url.workspace = true
 
 [lints]

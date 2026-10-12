@@ -1,7 +1,7 @@
-use cooly_api::Credentials;
+use cooly_api::{Client, Credentials, Team};
 use gpui_kit::{
     AppContext as _, Context, Entity, EventEmitter, IntoElement, ParentElement as _, Render, SharedString, Styled as _,
-    Subscription, Window,
+    Subscription, Task, Window,
     component::{
         ActiveTheme as _, StyledExt as _,
         button::{Button, ButtonVariants as _},
@@ -13,9 +13,9 @@ use gpui_kit::{
     prelude::FluentBuilder as _,
 };
 
-/// Emitted once the user submits credentials that pass local validation.
+/// Emitted once the instance has accepted the API token.
 pub enum LoginEvent {
-    Submitted(Credentials),
+    SignedIn { client: Client, team: Team },
 }
 
 /// Asks for the Coolify instance URL and an API token.
@@ -23,6 +23,8 @@ pub struct LoginView {
     instance: Entity<InputState>,
     token: Entity<InputState>,
     error: Option<SharedString>,
+    /// The in-flight token check. Dropping it cancels the check.
+    verifying: Option<Task<()>>,
     _subscriptions: [Subscription; 2],
 }
 
@@ -42,6 +44,7 @@ impl LoginView {
             instance,
             token,
             error: None,
+            verifying: None,
             _subscriptions: subscriptions,
         }
     }
@@ -58,22 +61,47 @@ impl LoginView {
     }
 
     fn submit(&mut self, cx: &mut Context<Self>) {
+        if self.verifying.is_some() {
+            return;
+        }
         let instance = self.instance.read(cx).value();
         let token = self.token.read(cx).value();
         match Credentials::parse(&instance, &token) {
             Ok(credentials) => {
                 self.error = None;
-                cx.emit(LoginEvent::Submitted(credentials));
+                self.verify(Client::new(credentials), cx);
             }
             Err(error) => self.error = Some(error.to_string().into()),
         }
         cx.notify();
+    }
+
+    /// Checks the token against the instance on a background thread.
+    fn verify(&mut self, client: Client, cx: &Context<Self>) {
+        let check = cx.background_executor().spawn(async move {
+            let team = client.current_team()?;
+            Ok::<_, cooly_api::ApiError>((client, team))
+        });
+        self.verifying = Some(cx.spawn(async move |this, cx| {
+            let result = check.await;
+            // Fails only if the view was closed meanwhile, in which case there's nothing left to update.
+            this.update(cx, |this, cx| {
+                this.verifying = None;
+                match result {
+                    Ok((client, team)) => cx.emit(LoginEvent::SignedIn { client, team }),
+                    Err(error) => this.error = Some(error.to_string().into()),
+                }
+                cx.notify();
+            })
+            .ok();
+        }));
     }
 }
 
 impl Render for LoginView {
     fn render(&mut self, _: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
         let theme = cx.theme();
+        let verifying = self.verifying.is_some();
 
         // The titlebar is transparent, so the extra top padding keeps content clear of the traffic lights.
         v_flex()
@@ -98,16 +126,20 @@ impl Render for LoginView {
             .child(
                 Form::new()
                     .child(
-                        Field::new()
-                            .label("Instance URL")
-                            .child(Input::new(&self.instance).id("instance").aria_label("Instance URL")),
+                        Field::new().label("Instance URL").child(
+                            Input::new(&self.instance)
+                                .id("instance")
+                                .aria_label("Instance URL")
+                                .disabled(verifying),
+                        ),
                     )
                     .child(
                         Field::new().label("API token").child(
                             Input::new(&self.token)
                                 .id("token")
                                 .aria_label("API token")
-                                .mask_toggle(),
+                                .mask_toggle()
+                                .disabled(verifying),
                         ),
                     ),
             )
@@ -116,6 +148,7 @@ impl Render for LoginView {
                     .primary()
                     .w_full()
                     .label("Sign in")
+                    .loading(verifying)
                     .on_click(cx.listener(|this, _, _, cx| this.submit(cx))),
             )
             .when_some(self.error.clone(), |this, error| {
