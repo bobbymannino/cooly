@@ -5,6 +5,7 @@ version.workspace = true
 edition.workspace = true
 
 [dependencies]
+cooly-store.workspace = true
 cooly-ui.workspace = true
 gpui-kit.workspace = true
 

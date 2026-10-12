@@ -1,3 +1,6 @@
+use std::sync::Arc;
+
+use cooly_store::Store;
 use gpui_kit::{KeyBinding, actions};
 
 actions!(
@@ -20,7 +23,15 @@ fn main() {
         })
         .detach();
 
-        if let Err(error) = cooly_ui::open_login_window(cx) {
+        let store = match Store::open() {
+            Ok(store) => Arc::new(store),
+            Err(error) => {
+                eprintln!("failed to open data store: {error}");
+                cx.quit();
+                return;
+            }
+        };
+        if let Err(error) = cooly_ui::launch(store, cx) {
             eprintln!("failed to open window: {error:?}");
             cx.quit();
         }

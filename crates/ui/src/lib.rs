@@ -3,4 +3,4 @@
 pub mod views;
 mod windows;
 
-pub use windows::open_login_window;
+pub use windows::launch;

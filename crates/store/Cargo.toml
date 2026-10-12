@@ -1,0 +1,20 @@
+[package]
+name = "cooly-store"
+description = "Local, offline storage for Cooly preferences and encrypted credentials"
+version.workspace = true
+edition.workspace = true
+
+[dependencies]
+chacha20poly1305.workspace = true
+cooly-api.workspace = true
+directories.workspace = true
+keyring.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+zeroize.workspace = true
+
+[dev-dependencies]
+tempfile.workspace = true
+
+[lints]
+workspace = true
